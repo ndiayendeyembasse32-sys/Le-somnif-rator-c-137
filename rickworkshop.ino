@@ -7,7 +7,31 @@
 #define SERVO_PIN 6
 
 const int SEUIL_DISTANCE_CM = 8;
-Servo servoSanction;
+Servo servoVerrou;
+
+// Réglage démo jury : 10 secondes (ou 60000 pour 1 min)
+const unsigned long DELAI_GRACE_MS = 10000; 
+
+enum EtatSysteme {
+  ATTENTE_DEPOT,   // 23:00 : Alerte début, Morty a un délai pour poser son tel
+  SCELLE_CONFORME, // Posé à temps : Loquet verrouillé (90°), LED Verte
+  INFRACTION       // Non posé à temps ou retiré : Alerte son intensifié + battement servo
+};
+
+EtatSysteme etatCourant = ATTENTE_DEPOT;
+unsigned long debutAttenteMs = 0;
+
+float mesurerDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duree = pulseIn(ECHO_PIN, HIGH, 30000);
+  if (duree == 0) return 999.0;
+  return (duree * 0.034) / 2.0;
+}
 
 void setup() {
   Serial.begin(9600);
@@ -17,74 +41,75 @@ void setup() {
   pinMode(LED_VERTE, OUTPUT);
   pinMode(LED_ROUGE, OUTPUT);
 
+  servoVerrou.attach(SERVO_PIN);
+  servoVerrou.write(0); // Loquet ouvert au départ
+
+  // 23:00 - Mise sous tension
+  digitalWrite(LED_ROUGE, HIGH);
   digitalWrite(LED_VERTE, LOW);
-  digitalWrite(LED_ROUGE, LOW);
-
-  // Initialisation du servomoteur
-  servoSanction.attach(SERVO_PIN);
-
-  // ==========================================
-  // --- TESTEUR DE SERVOMOTEUR AU DEMARRAGE ---
-  // ==========================================
-  Serial.println("=== TEST DU SERVOMOTEUR EN COURS ===");
-
-  // 1. Position zéro (repos)
-  Serial.println("Position 0 degres");
-  servoSanction.write(0);
-  delay(1000);
-
-  // 2. Balayage lent de 0 a 180 degres (pour observer la course complete)
-  Serial.println("Balayage progressif de 0 a 180 degres...");
-  for (int angle = 0; angle <= 180; angle += 10) {
-    servoSanction.write(angle);
-    delay(50);
-  }
-  delay(500);
-
-  // 3. Retour a la position repos (0 degres)
-  Serial.println("Retour a 0 degres (pret pour la detection)");
-  servoSanction.write(0);
-  delay(1000);
-
-  Serial.println("=== FIN DU TEST - SYSTEME OPERATIONNEL ===");
+  debutAttenteMs = millis();
+  
+  Serial.println("STATUS:23H_START");
 }
 
 void loop() {
-  // Envoi de l'impulsion ultrasonique
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
+  float distance = mesurerDistance();
+  bool telephonePresent = (distance > 0 && distance <= SEUIL_DISTANCE_CM);
 
-  long duree = pulseIn(ECHO_PIN, HIGH, 30000);
-  float distance = (duree * 0.034) / 2.0;
+  switch (etatCourant) {
+    case ATTENTE_DEPOT:
+      // Pendant la phase de grâce : LED Rouge allumée
+      digitalWrite(LED_ROUGE, HIGH);
+      digitalWrite(LED_VERTE, LOW);
+      servoVerrou.write(0); // Boîte ouverte, attend le téléphone
 
-  // CAS 1 : Objet / Smartphone detecte sur le socle (distance <= 8 cm)
-  if (distance > 0 && distance <= SEUIL_DISTANCE_CM) {
-    digitalWrite(LED_VERTE, HIGH);
-    digitalWrite(LED_ROUGE, LOW);
+      if (telephonePresent) {
+        // Le téléphone a été déposé : VERROUILLAGE
+        etatCourant = SCELLE_CONFORME;
+        servoVerrou.write(90); // Loquet tourne à 90° et scelle la boîte
+        digitalWrite(LED_ROUGE, LOW);
+        digitalWrite(LED_VERTE, HIGH);
+        Serial.println("STATUS:SCELLE");
+      } 
+      else if (millis() - debutAttenteMs >= DELAI_GRACE_MS) {
+        // Temps écoulé sans téléphone -> INFRACTION
+        etatCourant = INFRACTION;
+        Serial.println("STATUS:INFRACTION");
+      }
+      break;
 
-    // Le bras reste au repos a plat
-    servoSanction.write(0);
+    case SCELLE_CONFORME:
+      // Le téléphone doit rester dedans
+      if (telephonePresent) {
+        digitalWrite(LED_VERTE, HIGH);
+        digitalWrite(LED_ROUGE, LOW);
+        servoVerrou.write(90); // Reste scellé
+        Serial.println("STATUS:SCELLE");
+      } else {
+        // Vol ou retrait interdit : Infraction immédiate
+        etatCourant = INFRACTION;
+        Serial.println("STATUS:INFRACTION");
+      }
+      break;
 
-    Serial.print("Distance : ");
-    Serial.print(distance);
-    Serial.println(" cm -> PRESENT");
-  } 
-  // CAS 2 : Smartphone retire (infraction Morty)
-  else {
-    digitalWrite(LED_VERTE, LOW);
-    digitalWrite(LED_ROUGE, HIGH);
+    case INFRACTION:
+      // Alerte rouge permanente + agitation servo de sanction
+      digitalWrite(LED_VERTE, LOW);
+      digitalWrite(LED_ROUGE, HIGH);
+      
+      servoVerrou.write(80);
+      delay(120);
+      servoVerrou.write(10);
+      
+      Serial.println("STATUS:INFRACTION");
 
-    // Mouvement d'agitation de sanction
-    servoSanction.write(80);
-    delay(150);
-    servoSanction.write(10);
-
-    Serial.print("Distance : ");
-    Serial.print(distance);
-    Serial.println(" cm -> ABSENT (ALERTE)");
+      // Si Morty finit par le reposer
+      if (telephonePresent) {
+        etatCourant = SCELLE_CONFORME;
+        servoVerrou.write(90);
+        Serial.println("STATUS:SCELLE");
+      }
+      break;
   }
 
   delay(200);
