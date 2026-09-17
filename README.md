@@ -11,7 +11,7 @@ Dispositif interdimensionnel qui force Morty à déposer son smartphone au couch
 |---|---|
 | Lamine | Lead Robotique & Scripting Ned2 |
 | Ndeye Mbasse | Lead Électronique & Embarqué |
-| Yannis | Lead Intégration Logicielle & Audio |
+| Yanis | Lead Intégration Logicielle & Audio |
 | Awa | Lead Fabrication myDiL & Design CAO |
 | Amar | Lead Gestion de Projet, Livrables & Vidéo |
 
