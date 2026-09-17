@@ -1,0 +1,8 @@
+﻿Nom,Quantité,Composant
+"DIST1",1," Capteur de distance à ultrasons (4 broches)"
+"U1",1," Arduino Uno R3"
+"1",1," Platine d'expérimentation"
+"R1, R2",2,"220 Ω Résistance"
+"SERVO1",1,"Positionnel Microservomoteur"
+"D1",1,"Rouge LED"
+"D2",1,"Vert LED"
